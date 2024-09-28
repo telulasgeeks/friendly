@@ -6,13 +6,27 @@ import plotly.express as px
 import pandas as pd
 import geopandas as gpd
 import requests
+import json
 
 # Initialize the Dash app
 #app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css'])
+#app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css'])
+app = dash.Dash(__name__, 
+                external_stylesheets=[dbc.themes.BOOTSTRAP,'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css'],
+                suppress_callback_exceptions=True)
 
-# Load the KML file
-gdf = gpd.read_file("assets/subdistrict_small_2.kml", driver="KML")
+# Load and process the KML file
+gdf = gpd.read_file('assets/subdistrict_small_2.kml', driver='KML')
+geojson = json.loads(gdf.to_json())
+
+
+
+# Basemap options
+basemap_options = [
+    {'label': 'OpenStreetMap', 'value': 'open-street-map'},
+    {'label': 'Carto Positron', 'value': 'carto-positron'},
+    {'label': 'Stamen Terrain', 'value': 'stamen-terrain'},
+]
 
 # Function to create the menu bar
 def create_menu_bar():
@@ -47,8 +61,8 @@ landing_layout = html.Div([
             dbc.Col([
                 html.H1("Jakarta Nyaman", className="display-4 fw-bold"),
                 html.P("Laporkan pelanggaran dan bantu kami menjadikan Jakarta lebih nyaman untuk semua.", className="lead"),
-                dbc.Button("Mulai Lapor", color="primary", href="/report", className="me-2"),
-                dbc.Button("Pelajari Lebih Lanjut", color="secondary", href="#", outline=True),
+                #dbc.Button("Mulai Lapor", color="primary", href="/report", className="me-2"),
+                #dbc.Button("Pelajari Lebih Lanjut", color="secondary", href="#", outline=True),
             ], md=6, className="mb-4"),
             dbc.Col([
                 html.Img(src="/assets/landing1.png", className="img-fluid")
@@ -101,7 +115,7 @@ landing_layout = html.Div([
                 dbc.Button("Pelajari Lebih Lanjut", color="primary", href="#"),
             ], md=6, className="mb-4"),
             dbc.Col([
-                html.Img(src="/assets/about-image.png", className="img-fluid")
+                #html.Img(src="/assets/about-image.png", className="img-fluid")
             ], md=6, className="mb-4"),
         ], className="align-items-center"),
     ], className="py-5")
@@ -141,30 +155,17 @@ dashboard_layout = html.Div([
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
-                        html.H4("Grafik Laporan", className="card-title"),
-                        dcc.Graph(
-                            figure={
-                                'data': [
-                                    {'x': [1, 2, 3], 'y': [4, 1, 2], 'type': 'bar', 'name': 'SF'},
-                                    {'x': [1, 2, 3], 'y': [2, 4, 5], 'type': 'bar', 'name': 'Montréal'},
-                                ],
-                                'layout': {
-                                    'title': 'Dash Data Visualization'
-                                }
-                            }
-                        )
+                        html.H4("Map", className="card-title"),
+                        dcc.Dropdown(
+                            id='basemap-dropdown',
+                            options=basemap_options,
+                            value='open-street-map',
+                            style={'marginBottom': '10px'}
+                        ),
+                        dcc.Graph(id='map', style={'height': '60vh'})
                     ])
-                ], className="mb-4 dashboard-card"),
-            ], xs=12, lg=6, className="mb-4"),
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardBody([
-                        html.H4("Peta Laporan", className="card-title"),
-                        # Add your map component here
-                        html.Div("Map placeholder")
-                    ])
-                ], className="mb-4 dashboard-card"),
-            ], xs=12, lg=6, className="mb-4"),
+                ])
+            ], width=12),
         ]),
     ], fluid=True, className="dashboard-container"),
 ])
@@ -235,20 +236,30 @@ def toggle_navbar_collapse(n, is_open):
     return is_open
 
 # Callback to update the map
-@app.callback(Output("map", "figure"), [Input("url", "pathname")])
-def update_map(pathname):
-    if pathname == "/dashboard":
-        fig = px.choropleth_mapbox(
-            gdf,
-            geojson=gdf.geometry,
-            locations=gdf.index,
-            color=gdf.index,
-            center={"lat": -6.2088, "lon": 106.8456},
-            mapbox_style="carto-positron",
-            zoom=9,
-        )
-        fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
-        return fig
+@app.callback(
+    Output('map', 'figure'),
+    Input('basemap-dropdown', 'value')
+)
+def update_map(selected_basemap):
+    fig = px.choropleth_mapbox(
+        geojson=geojson,
+        locations=gdf.index,
+        mapbox_style=selected_basemap,
+        zoom=9,
+        center={"lat": gdf.geometry.centroid.y.mean(), "lon": gdf.geometry.centroid.x.mean()},
+        opacity=0.5,
+    )
+    
+    fig.update_layout(
+        mapbox=dict(
+            style=selected_basemap,
+        ),
+        margin={"r": 0, "t": 0, "l": 0, "b": 0},
+        height=600,
+    )
+
+    return fig
+
 
 if __name__ == "__main__":
     app.run_server(debug=True)
